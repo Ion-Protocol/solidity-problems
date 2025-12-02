@@ -20,8 +20,37 @@ contract AaveDecoderAndSanitizer {
 }
 
 contract Vault {
+    error NotOwner();
+    error NotManager();
+
+    event ManagerUpdated(address indexed oldManager, address indexed newManager);
+
+    address public immutable owner;
+    address public manager;
+
+    constructor(address _owner, address _manager) {
+        owner = _owner;
+        manager = _manager;
+    }
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    modifier onlyManager() {
+        if (msg.sender != manager) revert NotManager();
+        _;
+    }
+
+    function setManager(address newManager) external onlyOwner {
+        emit ManagerUpdated(manager, newManager);
+        manager = newManager;
+    }
+
     function manage(address target, bytes calldata data, uint256 value)
         external
+        onlyManager
         returns (bytes memory result)
     {
         bool success;
@@ -38,12 +67,44 @@ contract Vault {
  * @title MerkleMystery
  */
 contract MerkleMystery {
-
     error CustomError();
+    error NotOwner();
+    error NotStrategist();
+
+    event StrategistSet(address indexed strategist, bool allowed);
+    event ManageRootSet(address indexed strategist, bytes32 oldRoot, bytes32 newRoot);
 
     mapping(address => bytes32) public manageRoot;
+    mapping(address => bool) public isStrategist;
 
+    address public immutable owner;
     Vault public immutable vault;
+
+    constructor(address _owner, Vault _vault) {
+        owner = _owner;
+        vault = _vault;
+    }
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    modifier onlyStrategist() {
+        if (!isStrategist[msg.sender]) revert NotStrategist();
+        _;
+    }
+
+    function setStrategist(address strategist, bool allowed) external onlyOwner {
+        isStrategist[strategist] = allowed;
+        emit StrategistSet(strategist, allowed);
+    }
+
+    function setManageRoot(bytes32 newRoot) external onlyOwner {
+        bytes32 oldRoot = manageRoot[msg.sender];
+        manageRoot[msg.sender] = newRoot;
+        emit ManageRootSet(msg.sender, oldRoot, newRoot);
+    }
 
     function manageVaultWithMerkleVerification(
         bytes32[][] calldata manageProofs,
@@ -51,7 +112,7 @@ contract MerkleMystery {
         address[] calldata targets,
         bytes[] calldata targetData,
         uint256[] calldata values
-    ) external {
+    ) external onlyStrategist {
         bytes32 strategistManageRoot = manageRoot[msg.sender];
         
         uint256 targetsLength = targets.length;
